@@ -339,7 +339,7 @@ git commit -m "Data: bronze layer complete"
 | Log Analytics | raw_logs | parsed_logs | security_events | severity >= WARN |
 | Network Traffic | raw_packets | sessions | network_assets | packet_count >= 10 |
 
-> **Real-world example:** See [sdr-toolkit](https://github.com/jschuller/sdr-toolkit) for RF signal processing with this pattern.
+> **Real-world example:** See [rf-asset-discovery](https://github.com/jschuller/rf-asset-discovery) for RF signal processing with this pattern.
 
 ## Files to Create
 
