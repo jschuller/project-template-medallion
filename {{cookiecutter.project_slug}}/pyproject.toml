@@ -33,3 +33,7 @@ packages = ["src/{{ cookiecutter.project_slug }}"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+# Pin the rule set so `ruff check` does not change with ruff's default rules.
+select = ["E4", "E7", "E9", "F"]
