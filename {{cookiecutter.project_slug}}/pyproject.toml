@@ -35,5 +35,8 @@ packages = ["src/{{ cookiecutter.project_slug }}"]
 testpaths = ["tests"]
 
 [tool.ruff.lint]
-# Pin the rule set so `ruff check` does not change with ruff's default rules.
+# Temporary: pinned to ruff's pre-0.17 default rules. ruff 0.17's wider
+# defaults flag the blind `except Exception` blocks (BLE001) in
+# apps/transform.py, which hide errors as zero counts; widen this once those
+# handlers catch only the errors they expect.
 select = ["E4", "E7", "E9", "F"]
