@@ -32,14 +32,20 @@ jobs:
           silver_table=clean_events
           gold_table=event_assets
 
-      - name: Test defaults project
+      # The defaults project runs on the template's minimum Python (3.10),
+      # the custom one on the python_version it was rendered with.
+      - name: Test defaults project (Python 3.10)
         working-directory: ${{ runner.temp }}/defaults/my_medallion_project
+        env:
+          UV_PYTHON: "3.10"
         run: |
           uv run --extra dev pytest -q
           uv run --extra dev ruff check src/
 
-      - name: Test custom project
+      - name: Test custom project (Python 3.12)
         working-directory: ${{ runner.temp }}/custom/acme_sensor_lake
+        env:
+          UV_PYTHON: "3.12"
         run: |
           uv run --extra dev pytest -q
           uv run --extra dev ruff check src/
