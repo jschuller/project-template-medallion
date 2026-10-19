@@ -17,7 +17,7 @@ def transform() -> None:
     with MedallionTransformer(db_path) as transformer:
         # Show current status
         status = transformer.get_status()
-        print(f"Current state:")
+        print("Current state:")
         print(f"  Bronze: {status.bronze_count:,}")
         print(f"  Silver: {status.silver_count:,}")
         print(f"  Gold:   {status.gold_count:,}")
@@ -40,7 +40,7 @@ def transform() -> None:
         # Final status
         final = transformer.get_status()
         print()
-        print(f"Final state:")
+        print("Final state:")
         print(f"  Bronze: {final.bronze_count:,}")
         print(f"  Silver: {final.silver_count:,}")
         print(f"  Gold:   {final.gold_count:,}")

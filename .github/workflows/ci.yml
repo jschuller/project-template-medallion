@@ -1,0 +1,51 @@
+# Bake the template (defaults and custom values) and test each generated project.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.23"
+
+      - name: Render with defaults
+        run: uvx cookiecutter@2.7.1 --no-input -o "$RUNNER_TEMP/defaults" .
+
+      - name: Render with custom values
+        run: >-
+          uvx cookiecutter@2.7.1 --no-input -o "$RUNNER_TEMP/custom" .
+          project_name="Acme Sensor-Lake"
+          python_version=3.12
+          bronze_table=raw_events
+          silver_table=clean_events
+          gold_table=event_assets
+
+      # The defaults project runs on the template's minimum Python (3.10),
+      # the custom one on the python_version it was rendered with.
+      - name: Test defaults project (Python 3.10)
+        working-directory: ${{ runner.temp }}/defaults/my_medallion_project
+        env:
+          UV_PYTHON: "3.10"
+        run: |
+          uv run --extra dev pytest -q
+          uv run --extra dev ruff check src/
+
+      - name: Test custom project (Python 3.12)
+        working-directory: ${{ runner.temp }}/custom/acme_sensor_lake
+        env:
+          UV_PYTHON: "3.12"
+        run: |
+          uv run --extra dev pytest -q
+          uv run --extra dev ruff check src/

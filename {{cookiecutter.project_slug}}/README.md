@@ -48,6 +48,7 @@ Bronze (Raw) → Silver (Validated) → Gold (Enriched)
 │   └── commands/
 │       └── transform.md      # Transform skill
 ├── data/                     # DuckDB storage
+├── tests/                    # pytest suite
 ├── pyproject.toml
 └── README.md
 ```

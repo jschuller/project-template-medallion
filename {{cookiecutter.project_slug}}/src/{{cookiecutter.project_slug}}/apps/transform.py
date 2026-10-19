@@ -18,7 +18,7 @@ class TransformResult:
 
     layer: str
     table: str
-    rows_created: int
+    rows_created: int  # rows written by this run (the table is rebuilt each run)
     rows_source: int
     duration_seconds: float
     success: bool
@@ -113,6 +113,7 @@ class MedallionTransformer:
     def bronze_to_silver(self) -> TransformResult:
         """Transform Bronze → Silver with validation.
 
+        Rebuilds the silver table from bronze on every run (idempotent).
         Override this method with your domain-specific validation logic.
 
         Returns:
@@ -122,14 +123,16 @@ class MedallionTransformer:
         try:
             # Example: deduplicate and validate
             # Customize this SQL for your domain
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS silver.{{ cookiecutter.silver_table }} AS
+            # CREATE OR REPLACE rebuilds the table on every run, so re-runs
+            # pick up new bronze rows; the statement returns the rows written.
+            row = self.conn.execute("""
+                CREATE OR REPLACE TABLE silver.{{ cookiecutter.silver_table }} AS
                 SELECT DISTINCT * FROM bronze.{{ cookiecutter.bronze_table }}
                 WHERE id IS NOT NULL
-            """)
+            """).fetchone()
 
             source_count = self._safe_count("bronze", "{{ cookiecutter.bronze_table }}")
-            dest_count = self._safe_count("silver", "{{ cookiecutter.silver_table }}")
+            dest_count = row[0] if row else 0
 
             return TransformResult(
                 layer="bronze_to_silver",
@@ -153,6 +156,7 @@ class MedallionTransformer:
     def silver_to_gold(self) -> TransformResult:
         """Transform Silver → Gold with enrichment.
 
+        Rebuilds the gold table from silver on every run (idempotent).
         Override this method with your domain-specific enrichment logic.
 
         Returns:
@@ -162,17 +166,17 @@ class MedallionTransformer:
         try:
             # Example: enrich with classification
             # Customize this SQL for your domain
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS gold.{{ cookiecutter.gold_table }} AS
+            row = self.conn.execute("""
+                CREATE OR REPLACE TABLE gold.{{ cookiecutter.gold_table }} AS
                 SELECT
                     *,
                     'CLASSIFIED' as status,
                     CURRENT_TIMESTAMP as promoted_at
                 FROM silver.{{ cookiecutter.silver_table }}
-            """)
+            """).fetchone()
 
             source_count = self._safe_count("silver", "{{ cookiecutter.silver_table }}")
-            dest_count = self._safe_count("gold", "{{ cookiecutter.gold_table }}")
+            dest_count = row[0] if row else 0
 
             return TransformResult(
                 layer="silver_to_gold",
