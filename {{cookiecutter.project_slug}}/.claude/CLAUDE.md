@@ -33,6 +33,11 @@ uv run {{ cookiecutter.project_slug }}-transform
 - Bronze → Silver: Validation (nulls, duplicates, schema)
 - Silver → Gold: Enrichment (classification, risk assessment)
 
+Bronze needs an `id` column (silver drops rows where it is NULL) and a
+`source_category` column. Gold adds `category`, `quality_level` and
+`risk_level` from the CASE SQL generated from `storage/classification.py`;
+the match is case-insensitive, like `get_classification_info()`.
+
 ## Architecture
 
 ```
@@ -55,7 +60,7 @@ data/
 with MedallionTransformer(db_path) as transformer:
     results = transformer.run_full_pipeline()
 
-# Classification from Python dict → SQL CASE
+# Classification from Python dict → SQL CASE (used by silver_to_gold)
 from {{ cookiecutter.project_slug }}.storage.classification import CATEGORY_CASE_SQL
 ```
 

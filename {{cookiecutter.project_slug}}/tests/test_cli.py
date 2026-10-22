@@ -44,7 +44,7 @@ def test_transform_exits_1_when_a_layer_fails(
 def test_transform_exits_0_on_success(project_dir: Path) -> None:
     _create_db(
         "CREATE TABLE bronze.{{ cookiecutter.bronze_table }} AS "
-        "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) t(id, name)"
+        "SELECT * FROM (VALUES (1, 'a', 'type_a'), (2, 'b', NULL)) t(id, name, source_category)"
     )
 
     assert cli.transform() == 0

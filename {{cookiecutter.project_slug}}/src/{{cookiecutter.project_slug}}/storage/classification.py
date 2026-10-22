@@ -1,7 +1,12 @@
 """Classification and inference logic for {{ cookiecutter.project_name }}.
 
 Pattern: Define mappings as Python dicts, generate SQL CASE statements.
-This ensures a single source of truth for classification logic.
+This ensures a single source of truth for classification logic: the gold
+layer (apps/transform.py) uses the generated CASE SQL, and
+get_classification_info gives the same answer in Python.
+
+Matching is case-insensitive in both: the input is lower-cased and looked up
+against the keys, so keep DOMAIN_MAP keys lower-case.
 """
 
 from __future__ import annotations
@@ -22,7 +27,10 @@ class ClassificationInfo(NamedTuple):
 # Domain Classification Map
 # =============================================================================
 # Customize this mapping for your domain.
-# Keys are source categories, values are classification info.
+# Keys are lower-case source categories, values are classification info.
+
+# Column the CASE SQL reads; silver (and so bronze) must have it.
+SOURCE_CATEGORY_COLUMN = "source_category"
 
 DOMAIN_MAP: dict[str, ClassificationInfo] = {
     "type_a": ClassificationInfo(
@@ -56,13 +64,17 @@ DEFAULT_INFO = ClassificationInfo(
 def get_classification_info(source_category: str | None) -> ClassificationInfo:
     """Get classification info for a source category.
 
+    Matches like the generated CASE SQL: case-insensitively, with no other
+    normalisation (surrounding spaces are significant), and NULL/None gets
+    the default.
+
     Args:
         source_category: Source category identifier.
 
     Returns:
         ClassificationInfo with classification fields.
     """
-    if not source_category:
+    if source_category is None:
         return DEFAULT_INFO
     return DOMAIN_MAP.get(source_category.lower(), DEFAULT_INFO)
 
@@ -119,7 +131,8 @@ def generate_case_sql(
 
     Keys, values and the default are emitted as escaped string literals and
     the input column as a quoted identifier, so mapping data cannot change
-    the structure of the SQL.
+    the structure of the SQL. The column is lower-cased before matching, as
+    in get_classification_info, so keys should be lower-case.
 
     Args:
         mapping: Classification mapping dictionary.
@@ -149,21 +162,21 @@ def generate_case_sql(
             f"    WHEN {sql_string_literal(key)} THEN {sql_string_literal(value)}"
         )
 
-    return f"""CASE {column}
+    return f"""CASE lower({column})
 {chr(10).join(cases)}
     ELSE {default}
 END"""
 
 
-# Pre-generated SQL CASE statements
+# Pre-generated SQL CASE statements (defaults come from DEFAULT_INFO)
 CATEGORY_CASE_SQL = generate_case_sql(
-    DOMAIN_MAP, "source_category", "category", "UNKNOWN"
+    DOMAIN_MAP, SOURCE_CATEGORY_COLUMN, "category", DEFAULT_INFO.category
 )
 
 QUALITY_CASE_SQL = generate_case_sql(
-    DOMAIN_MAP, "source_category", "quality_level", "raw"
+    DOMAIN_MAP, SOURCE_CATEGORY_COLUMN, "quality_level", DEFAULT_INFO.quality_level
 )
 
 RISK_CASE_SQL = generate_case_sql(
-    DOMAIN_MAP, "source_category", "risk_level", "informational"
+    DOMAIN_MAP, SOURCE_CATEGORY_COLUMN, "risk_level", DEFAULT_INFO.risk_level
 )

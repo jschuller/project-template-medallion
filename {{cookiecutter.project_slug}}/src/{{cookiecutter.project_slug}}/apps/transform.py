@@ -12,6 +12,12 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from {{ cookiecutter.project_slug }}.storage.classification import (
+    CATEGORY_CASE_SQL,
+    QUALITY_CASE_SQL,
+    RISK_CASE_SQL,
+)
+
 if TYPE_CHECKING:
 {%- if cookiecutter.python_version.split(".")[1] | int >= 11 %}
     from typing import Self
@@ -164,7 +170,9 @@ class MedallionTransformer:
     def silver_to_gold(self) -> TransformResult:
         """Transform Silver → Gold with enrichment.
 
-        Rebuilds the gold table from silver on every run (idempotent).
+        Rebuilds the gold table from silver on every run (idempotent), adding
+        category, quality_level and risk_level from the CASE SQL generated
+        from storage/classification.py. Silver needs a source_category column.
         Override this method with your domain-specific enrichment logic.
 
         Returns:
@@ -172,14 +180,16 @@ class MedallionTransformer:
         """
         start = time.time()
         try:
-            # Example: enrich with classification
+            # Example: enrich with classification from the Python mapping
             # Customize this SQL for your domain
-            row = self.conn.execute("""
+            row = self.conn.execute(f"""
                 CREATE OR REPLACE TABLE gold.{{ cookiecutter.gold_table }} AS
                 SELECT
                     *,
-                    'CLASSIFIED' as status,
-                    CURRENT_TIMESTAMP as promoted_at
+                    {CATEGORY_CASE_SQL} AS category,
+                    {QUALITY_CASE_SQL} AS quality_level,
+                    {RISK_CASE_SQL} AS risk_level,
+                    CURRENT_TIMESTAMP AS promoted_at
                 FROM silver.{{ cookiecutter.silver_table }}
             """).fetchone()
 

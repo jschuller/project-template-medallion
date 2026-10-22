@@ -9,14 +9,19 @@ import duckdb
 import pytest
 
 from {{ cookiecutter.project_slug }}.apps.transform import MedallionTransformer
+from {{ cookiecutter.project_slug }}.storage.classification import (
+    get_classification_info,
+)
 
 BRONZE = "bronze.{{ cookiecutter.bronze_table }}"
+GOLD = "gold.{{ cookiecutter.gold_table }}"
 
 
 def _insert_bronze(
-    transformer: MedallionTransformer, rows: list[tuple[int | None, str]]
+    transformer: MedallionTransformer,
+    rows: list[tuple[int | None, str, str | None]],
 ) -> None:
-    transformer.conn.executemany(f"INSERT INTO {BRONZE} VALUES (?, ?)", rows)
+    transformer.conn.executemany(f"INSERT INTO {BRONZE} VALUES (?, ?, ?)", rows)
 
 
 @pytest.fixture
@@ -24,9 +29,14 @@ def transformer(tmp_path: Path) -> Iterator[MedallionTransformer]:
     """Transformer on a temporary database with a seeded bronze table."""
     with MedallionTransformer(tmp_path / "test.duckdb") as transformer:
         transformer.create_schemas()
-        transformer.conn.execute(f"CREATE TABLE {BRONZE} (id INTEGER, name VARCHAR)")
+        transformer.conn.execute(
+            f"CREATE TABLE {BRONZE} (id INTEGER, name VARCHAR, source_category VARCHAR)"
+        )
         # One exact duplicate and one row without an id: silver drops both.
-        _insert_bronze(transformer, [(1, "a"), (2, "b"), (2, "b"), (None, "no id")])
+        _insert_bronze(
+            transformer,
+            [(1, "a", "type_a"), (2, "b", "TYPE_B"), (2, "b", "TYPE_B"), (None, "no id", "type_c")],
+        )
         yield transformer
 
 
@@ -43,7 +53,9 @@ def test_pipeline_deduplicates_and_drops_null_ids(
 
 def test_rerun_promotes_new_bronze_rows(transformer: MedallionTransformer) -> None:
     transformer.run_full_pipeline()
-    _insert_bronze(transformer, [(3, "c"), (3, "c"), (None, "still no id")])
+    _insert_bronze(
+        transformer, [(3, "c", None), (3, "c", None), (None, "still no id", None)]
+    )
 
     results = transformer.run_full_pipeline()
 
@@ -51,6 +63,22 @@ def test_rerun_promotes_new_bronze_rows(transformer: MedallionTransformer) -> No
     assert [(r.rows_source, r.rows_created) for r in results] == [(7, 3), (3, 3)]
     status = transformer.get_status()
     assert (status.bronze_count, status.silver_count, status.gold_count) == (7, 3, 3)
+
+
+def test_gold_classification_matches_python(
+    transformer: MedallionTransformer,
+) -> None:
+    _insert_bronze(transformer, [(4, "d", "Type_C"), (5, "e", "not mapped")])
+    transformer.run_full_pipeline()
+
+    rows = transformer.conn.execute(
+        f"SELECT source_category, category, quality_level, risk_level FROM {GOLD} ORDER BY id"
+    ).fetchall()
+
+    assert [r[1] for r in rows] == ["TYPE_A", "TYPE_B", "TYPE_C", "UNKNOWN"]
+    for source_category, *classified in rows:
+        info = get_classification_info(source_category)
+        assert classified == [info.category, info.quality_level, info.risk_level]
 
 
 def test_missing_bronze_table_fails_the_layer(tmp_path: Path) -> None:

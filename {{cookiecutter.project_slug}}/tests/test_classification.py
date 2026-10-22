@@ -6,8 +6,14 @@ import duckdb
 import pytest
 
 from {{ cookiecutter.project_slug }}.storage.classification import (
+    CATEGORY_CASE_SQL,
+    DOMAIN_MAP,
+    QUALITY_CASE_SQL,
+    RISK_CASE_SQL,
+    SOURCE_CATEGORY_COLUMN,
     ClassificationInfo,
     generate_case_sql,
+    get_classification_info,
     sql_identifier,
     sql_string_literal,
 )
@@ -36,7 +42,7 @@ def test_single_quotes_in_keys_values_and_default_are_escaped() -> None:
     mapping = {"o'neil": _info("it's"), "plain": _info("PLAIN")}
     sql = generate_case_sql(mapping, "source_category", "category", "n'a")
 
-    assert _evaluate(sql, "source_category", ["o'neil", "plain", "other"]) == [
+    assert _evaluate(sql, "source_category", ["O'Neil", "plain", "other"]) == [
         "it's",
         "PLAIN",
         "n'a",
@@ -44,7 +50,7 @@ def test_single_quotes_in_keys_values_and_default_are_escaped() -> None:
 
 
 def test_injection_attempt_is_returned_as_data() -> None:
-    payload = "x' END; DROP TABLE t; --"
+    payload = "x' end; drop table t; --"
     sql = generate_case_sql({payload: _info(payload)}, "source_category", "category", "-")
 
     # _evaluate also checks that table t still holds every row afterwards.
@@ -81,3 +87,42 @@ def test_literal_helpers_reject_nul() -> None:
         sql_string_literal("a\x00b")
     with pytest.raises(ValueError):
         sql_identifier("")
+
+
+PARITY_INPUTS: list[str | None] = [
+    *DOMAIN_MAP,
+    *(key.upper() for key in DOMAIN_MAP),
+    *(key.title() for key in DOMAIN_MAP),
+    "type_a ",  # surrounding spaces are significant in both
+    " type_a",
+    "unknown",
+    "",
+    None,
+    "o'brien",
+]
+
+
+@pytest.mark.parametrize(
+    ("field", "case_sql"),
+    [
+        ("category", CATEGORY_CASE_SQL),
+        ("quality_level", QUALITY_CASE_SQL),
+        ("risk_level", RISK_CASE_SQL),
+    ],
+)
+def test_sql_and_python_classification_agree(field: str, case_sql: str) -> None:
+    expected = [getattr(get_classification_info(v), field) for v in PARITY_INPUTS]
+
+    assert _evaluate(case_sql, SOURCE_CATEGORY_COLUMN, PARITY_INPUTS) == expected
+
+
+def test_matching_is_case_insensitive() -> None:
+    assert get_classification_info("TYPE_A") == DOMAIN_MAP["type_a"]
+    assert _evaluate(CATEGORY_CASE_SQL, SOURCE_CATEGORY_COLUMN, ["TYPE_A"]) == [
+        DOMAIN_MAP["type_a"].category
+    ]
+
+
+def test_domain_map_keys_are_lower_case() -> None:
+    # Both lookups lower-case the input, so a mixed-case key never matches.
+    assert all(key == key.lower() for key in DOMAIN_MAP)
