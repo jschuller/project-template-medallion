@@ -87,6 +87,31 @@ class MedallionTransformer:
         for schema in ["bronze", "silver", "gold"]:
             self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
 
+    def load_bronze_csv(self, csv_path: Path) -> int:
+        """Replace the bronze table with the rows of a CSV file.
+
+        Column names come from the header row and types are detected by
+        DuckDB. The path is passed as a query parameter, not spliced into SQL.
+
+        Args:
+            csv_path: CSV file with a header row.
+
+        Returns:
+            Number of rows loaded.
+
+        Raises:
+            duckdb.Error: If the file cannot be read or parsed.
+        """
+        self.create_schemas()
+        row = self.conn.execute(
+            """
+            CREATE OR REPLACE TABLE bronze.{{ cookiecutter.bronze_table }} AS
+            SELECT * FROM read_csv(?, header = true)
+            """,
+            [str(csv_path)],
+        ).fetchone()
+        return row[0] if row else 0
+
     def get_status(self) -> MedallionStatus:
         """Get current record counts for each layer.
 

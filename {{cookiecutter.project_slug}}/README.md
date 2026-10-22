@@ -15,9 +15,21 @@ pip install -e ".[dev]"
 ## Usage
 
 ```bash
-# Run transformation pipeline
+# 1. Load the bundled sample CSV into bronze (replaces bronze.{{ cookiecutter.bronze_table }})
+uv run {{ cookiecutter.project_slug }}-load samples/bronze_sample.csv
+
+# 2. Run the transformation pipeline
 uv run {{ cookiecutter.project_slug }}-transform
 ```
+
+The sample has 7 rows, including one duplicate and one row without an `id`,
+so the pipeline reports `7 → 5` for bronze → silver and `5 → 5` for
+silver → gold. Gold adds `category`, `quality_level` and `risk_level` from
+`storage/classification.py`.
+
+To load your own data, pass any CSV with a header row. The shipped
+transforms need an `id` column and a `source_category` column. Both
+commands exit with status 1 on failure.
 
 ## Architecture
 
@@ -40,14 +52,17 @@ Bronze (Raw) → Silver (Validated) → Gold (Enriched)
 ├── src/{{ cookiecutter.project_slug }}/
 │   ├── apps/
 │   │   └── transform.py      # MedallionTransformer
-│   └── storage/
-│       ├── classification.py # Domain mapping
-│       └── models.py         # Domain enums
+│   ├── storage/
+│   │   ├── classification.py # Domain mapping
+│   │   └── models.py         # Domain enums
+│   └── cli.py                # load and transform commands
 ├── .claude/
 │   ├── CLAUDE.md             # Dev instructions
 │   └── commands/
 │       └── transform.md      # Transform skill
 ├── data/                     # DuckDB storage
+├── samples/
+│   └── bronze_sample.csv     # Quickstart data for the load command
 ├── tests/                    # pytest suite
 ├── pyproject.toml
 └── README.md

@@ -10,6 +10,11 @@ pip install cookiecutter
 
 # Generate project from template
 cookiecutter gh:jschuller/project-template-medallion
+
+# Run the pipeline on the bundled sample data
+cd your_project
+uv run your_project-load samples/bronze_sample.csv
+uv run your_project-transform
 ```
 
 ## What You Get
@@ -19,14 +24,17 @@ your_project/
 ├── src/your_project/
 │   ├── apps/
 │   │   └── transform.py      # MedallionTransformer
-│   └── storage/
-│       ├── classification.py # Domain mapping
-│       └── models.py         # Domain enums
+│   ├── storage/
+│   │   ├── classification.py # Domain mapping
+│   │   └── models.py         # Domain enums
+│   └── cli.py                # load and transform commands
 ├── .claude/
 │   ├── CLAUDE.md             # Dev instructions
 │   └── commands/
 │       └── transform.md      # Transform skill
 ├── data/                     # DuckDB storage
+├── samples/                  # Sample bronze CSV for the quickstart
+├── tests/                    # pytest suite
 ├── pyproject.toml
 └── README.md
 ```

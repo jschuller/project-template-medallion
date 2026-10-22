@@ -11,9 +11,14 @@ uv sync --all-extras
 ## Commands
 
 ```bash
+# Load a CSV into bronze (replaces bronze.{{ cookiecutter.bronze_table }}); the sample is for the quickstart
+uv run {{ cookiecutter.project_slug }}-load samples/bronze_sample.csv
+
 # Run transformation pipeline
 uv run {{ cookiecutter.project_slug }}-transform
 ```
+
+Both commands exit with status 1 on failure.
 
 ## Skills
 
@@ -47,10 +52,12 @@ src/{{ cookiecutter.project_slug }}/
 ├── storage/
 │   ├── classification.py # Domain mapping
 │   └── models.py         # Domain enums
-└── cli.py                # CLI entry points
+└── cli.py                # CLI entry points (load, transform)
 
 data/
 └── {{ cookiecutter.project_slug }}.duckdb  # Persistent storage
+samples/
+└── bronze_sample.csv     # Quickstart bronze data
 ```
 
 ## Key Patterns

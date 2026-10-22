@@ -6,12 +6,13 @@ on:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   bake:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,6 +43,15 @@ jobs:
           uv run --extra dev pytest -q
           uv run --extra dev ruff check src/
 
+      # The generated README's quickstart, as written.
+      - name: Quickstart defaults project
+        working-directory: ${{ runner.temp }}/defaults/my_medallion_project
+        env:
+          UV_PYTHON: "3.10"
+        run: |
+          uv run my_medallion_project-load samples/bronze_sample.csv
+          uv run my_medallion_project-transform
+
       - name: Test custom project (Python 3.12)
         working-directory: ${{ runner.temp }}/custom/acme_sensor_lake
         env:
@@ -49,3 +59,11 @@ jobs:
         run: |
           uv run --extra dev pytest -q
           uv run --extra dev ruff check src/
+
+      - name: Quickstart custom project
+        working-directory: ${{ runner.temp }}/custom/acme_sensor_lake
+        env:
+          UV_PYTHON: "3.12"
+        run: |
+          uv run acme_sensor_lake-load samples/bronze_sample.csv
+          uv run acme_sensor_lake-transform

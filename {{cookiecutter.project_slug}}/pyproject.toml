@@ -22,6 +22,7 @@ dashboard = [
 ]
 
 [project.scripts]
+{{ cookiecutter.project_slug }}-load = "{{ cookiecutter.project_slug }}.cli:load"
 {{ cookiecutter.project_slug }}-transform = "{{ cookiecutter.project_slug }}.cli:transform"
 
 [build-system]
