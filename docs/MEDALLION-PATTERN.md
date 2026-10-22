@@ -323,13 +323,25 @@ with MedallionTransformer(db_path) as transformer:
     transformer.run_full_pipeline()
 ```
 
-### 5. Checkpoint Commits
+### 5. Keep the Database Out of Git
+
+The DuckDB file is a build output, not source. Commit the code and the
+source data (or the steps that fetch it), and rebuild the layers by
+loading bronze and re-running the pipeline. Committing the database puts
+every row, including any sensitive data, into the repository history for
+good, and each binary change bloats the repository.
+
+Generated projects ship a `.gitignore` that ignores `*.duckdb`,
+`*.duckdb.wal` and everything in `data/` except `data/.gitkeep`.
 
 ```bash
-# Commit after each major transformation
-git add data/unified.duckdb
-git commit -m "Data: bronze layer complete"
+# Rebuild instead of committing data/unified.duckdb
+uv run my-load path/to/source.csv
+uv run my-transform
 ```
+
+To keep a snapshot of a layer, export it outside the repository, e.g.
+`EXPORT DATABASE '/backups/unified-2026-01-31' (FORMAT parquet)`.
 
 ## Example Implementations
 
@@ -355,6 +367,7 @@ your-project/
 │   ├── CLAUDE.md             # Dev instructions
 │   └── commands/
 │       └── transform.md      # Transform skill
+├── .gitignore                # Ignores *.duckdb and data/ contents
 └── data/
-    └── unified.duckdb        # Persistent storage
+    └── unified.duckdb        # Persistent storage (gitignored)
 ```

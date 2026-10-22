@@ -60,10 +60,11 @@ Bronze (Raw) → Silver (Validated) → Gold (Enriched)
 │   ├── CLAUDE.md             # Dev instructions
 │   └── commands/
 │       └── transform.md      # Transform skill
-├── data/                     # DuckDB storage
+├── data/                     # DuckDB storage (contents gitignored)
 ├── samples/
 │   └── bronze_sample.csv     # Quickstart data for the load command
 ├── tests/                    # pytest suite
+├── .gitignore                # Keeps *.duckdb and data/ out of git
 ├── pyproject.toml
 └── README.md
 ```

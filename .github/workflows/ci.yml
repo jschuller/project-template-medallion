@@ -52,6 +52,20 @@ jobs:
           uv run my_medallion_project-load samples/bronze_sample.csv
           uv run my_medallion_project-transform
 
+      # After the quickstart: the database and other data/ files are ignored,
+      # the folder placeholder and the sample are not.
+      - name: Generated .gitignore keeps data out of git
+        working-directory: ${{ runner.temp }}/defaults/my_medallion_project
+        run: |
+          git init -q
+          touch data/extra.csv data/my_medallion_project.duckdb.wal
+          for path in data/my_medallion_project.duckdb data/my_medallion_project.duckdb.wal data/extra.csv; do
+            git check-ignore -q "$path" || { echo "not ignored: $path"; exit 1; }
+          done
+          for path in data/.gitkeep samples/bronze_sample.csv; do
+            if git check-ignore -q "$path"; then echo "ignored: $path"; exit 1; fi
+          done
+
       - name: Test custom project (Python 3.12)
         working-directory: ${{ runner.temp }}/custom/acme_sensor_lake
         env:

@@ -32,9 +32,10 @@ your_project/
 │   ├── CLAUDE.md             # Dev instructions
 │   └── commands/
 │       └── transform.md      # Transform skill
-├── data/                     # DuckDB storage
+├── data/                     # DuckDB storage (contents gitignored)
 ├── samples/                  # Sample bronze CSV for the quickstart
 ├── tests/                    # pytest suite
+├── .gitignore                # Keeps *.duckdb and data/ out of git
 ├── pyproject.toml
 └── README.md
 ```

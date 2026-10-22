@@ -55,7 +55,7 @@ src/{{ cookiecutter.project_slug }}/
 └── cli.py                # CLI entry points (load, transform)
 
 data/
-└── {{ cookiecutter.project_slug }}.duckdb  # Persistent storage
+└── {{ cookiecutter.project_slug }}.duckdb  # Persistent storage (gitignored; never commit it)
 samples/
 └── bronze_sample.csv     # Quickstart bronze data
 ```
