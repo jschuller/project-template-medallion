@@ -271,6 +271,8 @@ class MyDomainTransformer(MedallionTransformer):
 ### Step 5: Add CLI Commands
 
 ```python
+import sys
+
 import typer
 
 app = typer.Typer()
@@ -289,6 +291,11 @@ def transform(
             results = transformer.run_full_pipeline(dry_run=dry_run)
             for r in results:
                 print(f"{r.layer}.{r.table}: {r.rows_created} rows")
+            if not all(r.success for r in results):
+                raise typer.Exit(code=1)  # scripts and agents must see the failure
+        else:
+            print(f"command not implemented in this example: {command}", file=sys.stderr)
+            raise typer.Exit(code=2)
 ```
 
 ### Step 6: Create Claude Skill
@@ -316,9 +323,9 @@ uv run my-transform full      # Run complete pipeline
 ### 1. Idempotent Transforms
 
 ```python
-# Always drop before create
-self.conn.execute("DROP TABLE IF EXISTS silver.verified_data")
-self.conn.execute(f"CREATE TABLE silver.verified_data AS {sql}")
+# Rebuild the table on every run, in one statement. `sql` and `params` are
+# the query and its bound values from the transformation template above.
+self.conn.execute(f"CREATE OR REPLACE TABLE silver.verified_data AS {sql}", params)
 ```
 
 ### 2. Lineage Tracking
@@ -360,9 +367,10 @@ Generated projects ship a `.gitignore` that ignores `*.duckdb`,
 `*.duckdb.wal` and everything in `data/` except `data/.gitkeep`.
 
 ```bash
-# Rebuild instead of committing data/unified.duckdb
-uv run my-load path/to/source.csv
-uv run my-transform
+# In a project generated from this template, rebuild instead of committing
+# data/<project_slug>.duckdb:
+uv run <project_slug>-load path/to/source.csv
+uv run <project_slug>-transform
 ```
 
 To keep a snapshot of a layer, export it outside the repository, e.g.

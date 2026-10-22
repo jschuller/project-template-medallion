@@ -6,6 +6,12 @@ description: Run medallion transformation pipeline
 
 Runs the Bronze → Silver → Gold transformation pipeline.
 
+Bronze must be loaded first. For the bundled sample:
+
+```bash
+uv run {{ cookiecutter.project_slug }}-load samples/bronze_sample.csv
+```
+
 ## Usage
 
 ```
@@ -21,21 +27,26 @@ Runs the Bronze → Silver → Gold transformation pipeline.
 
 ## Example Output
 
+After loading the bundled sample (silver drops one duplicate and one row
+without an id; gold is a 1:1 rebuild of silver with classification added):
+
 ```
 Current state:
-  Bronze: 10,000
-  Silver: 500
-  Gold:   50
+  Bronze: 7
+  Silver: 0
+  Gold:   0
 
 Running transformation pipeline...
-  ✓ bronze_to_silver: 10,000 → 8,500 (1.23s)
-  ✓ silver_to_gold: 8,500 → 1,200 (0.45s)
+  ✓ bronze_to_silver: 7 → 5 (0.00s)
+  ✓ silver_to_gold: 5 → 5 (0.00s)
 
 Final state:
-  Bronze: 10,000
-  Silver: 8,500
-  Gold:   1,200
+  Bronze: 7
+  Silver: 5
+  Gold:   5
 ```
+
+The command exits with status 1 if the database is missing or a layer fails.
 
 ## Implementation
 
