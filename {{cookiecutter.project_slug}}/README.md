@@ -79,6 +79,14 @@ Bronze (Raw) → Silver (Validated) → Gold (Enriched)
 2. **Create classification mappings** in `storage/classification.py`
 3. **Implement quality gates** by overriding transform methods
 
+## Upgrading From an Earlier Template Version
+
+Code or queries written against an earlier version of this template need two
+changes: gold no longer has a `status` column (it held the literal
+`'CLASSIFIED'`; gold now has `category`, `quality_level`, `risk_level` and
+`promoted_at`), and bronze must have a `source_category` column. The commands
+now exit with status 1 on failure instead of always 0.
+
 ## Development
 
 ```bash
