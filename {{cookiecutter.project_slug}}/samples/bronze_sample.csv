@@ -1,0 +1,8 @@
+id,name,source_category
+1,pump-01,type_a
+2,valve-07,TYPE_B
+3,sensor-12,type_c
+3,sensor-12,type_c
+4,meter-03,Type_A
+,orphan-row,type_b
+5,gateway-02,unknown

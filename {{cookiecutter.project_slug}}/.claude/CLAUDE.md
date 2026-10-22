@@ -11,9 +11,14 @@ uv sync --all-extras
 ## Commands
 
 ```bash
+# Load a CSV into bronze (replaces bronze.{{ cookiecutter.bronze_table }}); the sample is for the quickstart
+uv run {{ cookiecutter.project_slug }}-load samples/bronze_sample.csv
+
 # Run transformation pipeline
 uv run {{ cookiecutter.project_slug }}-transform
 ```
+
+Both commands exit with status 1 on failure.
 
 ## Skills
 
@@ -33,6 +38,14 @@ uv run {{ cookiecutter.project_slug }}-transform
 - Bronze → Silver: Validation (nulls, duplicates, schema)
 - Silver → Gold: Enrichment (classification, risk assessment)
 
+Bronze needs an `id` column (silver drops rows where it is NULL) and a
+`source_category` column (text or numeric codes). Gold adds `category`,
+`quality_level` and `risk_level` from the CASE SQL generated from
+`storage/classification.py`, plus `promoted_at` (`GOLD_ADDED_COLUMNS`); the
+match is on the value's text, case-insensitively, like
+`get_classification_info()`. If bronze already has a column with one of those
+names, gold fails with an error naming it: rename the bronze column.
+
 ## Architecture
 
 ```
@@ -42,10 +55,12 @@ src/{{ cookiecutter.project_slug }}/
 ├── storage/
 │   ├── classification.py # Domain mapping
 │   └── models.py         # Domain enums
-└── cli.py                # CLI entry points
+└── cli.py                # CLI entry points (load, transform)
 
 data/
-└── {{ cookiecutter.project_slug }}.duckdb  # Persistent storage
+└── {{ cookiecutter.project_slug }}.duckdb  # Persistent storage (gitignored; never commit it)
+samples/
+└── bronze_sample.csv     # Quickstart bronze data
 ```
 
 ## Key Patterns
@@ -55,7 +70,7 @@ data/
 with MedallionTransformer(db_path) as transformer:
     results = transformer.run_full_pipeline()
 
-# Classification from Python dict → SQL CASE
+# Classification from Python dict → SQL CASE (used by silver_to_gold)
 from {{ cookiecutter.project_slug }}.storage.classification import CATEGORY_CASE_SQL
 ```
 

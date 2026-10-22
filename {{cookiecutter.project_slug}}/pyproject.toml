@@ -22,6 +22,7 @@ dashboard = [
 ]
 
 [project.scripts]
+{{ cookiecutter.project_slug }}-load = "{{ cookiecutter.project_slug }}.cli:load"
 {{ cookiecutter.project_slug }}-transform = "{{ cookiecutter.project_slug }}.cli:transform"
 
 [build-system]
@@ -34,9 +35,3 @@ packages = ["src/{{ cookiecutter.project_slug }}"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-[tool.ruff.lint]
-# Temporary: pinned to ruff's pre-0.17 default rules. ruff 0.17's wider
-# defaults flag the blind `except Exception` blocks (BLE001) in
-# apps/transform.py, which hide errors as zero counts; widen this once those
-# handlers catch only the errors they expect.
-select = ["E4", "E7", "E9", "F"]

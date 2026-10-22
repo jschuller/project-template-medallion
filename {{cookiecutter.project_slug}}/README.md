@@ -15,9 +15,25 @@ pip install -e ".[dev]"
 ## Usage
 
 ```bash
-# Run transformation pipeline
+# 1. Load the bundled sample CSV into bronze (replaces bronze.{{ cookiecutter.bronze_table }})
+uv run {{ cookiecutter.project_slug }}-load samples/bronze_sample.csv
+
+# 2. Run the transformation pipeline
 uv run {{ cookiecutter.project_slug }}-transform
 ```
+
+The sample has 7 rows, including one duplicate and one row without an `id`,
+so the pipeline reports `7 → 5` for bronze → silver and `5 → 5` for
+silver → gold. Gold adds `category`, `quality_level` and `risk_level` from
+`storage/classification.py`.
+
+To load your own data, pass any CSV with a header row. The shipped
+transforms need an `id` column and a `source_category` column (text or
+numeric codes); the load command refuses a file without them, and a path
+containing `*`, `?`, `[` or `]` (DuckDB would expand it as a glob). Bronze must not have columns named `category`,
+`quality_level`, `risk_level` or `promoted_at`, which gold adds; gold fails
+with an error naming any such column. Both commands exit with status 1 on
+failure.
 
 ## Architecture
 
@@ -40,15 +56,19 @@ Bronze (Raw) → Silver (Validated) → Gold (Enriched)
 ├── src/{{ cookiecutter.project_slug }}/
 │   ├── apps/
 │   │   └── transform.py      # MedallionTransformer
-│   └── storage/
-│       ├── classification.py # Domain mapping
-│       └── models.py         # Domain enums
+│   ├── storage/
+│   │   ├── classification.py # Domain mapping
+│   │   └── models.py         # Domain enums
+│   └── cli.py                # load and transform commands
 ├── .claude/
 │   ├── CLAUDE.md             # Dev instructions
 │   └── commands/
 │       └── transform.md      # Transform skill
-├── data/                     # DuckDB storage
+├── data/                     # DuckDB storage (contents gitignored)
+├── samples/
+│   └── bronze_sample.csv     # Quickstart data for the load command
 ├── tests/                    # pytest suite
+├── .gitignore                # Keeps *.duckdb and data/ out of git
 ├── pyproject.toml
 └── README.md
 ```
@@ -59,6 +79,14 @@ Bronze (Raw) → Silver (Validated) → Gold (Enriched)
 2. **Create classification mappings** in `storage/classification.py`
 3. **Implement quality gates** by overriding transform methods
 
+## Upgrading From an Earlier Template Version
+
+Code or queries written against an earlier version of this template need two
+changes: gold no longer has a `status` column (it held the literal
+`'CLASSIFIED'`; gold now has `category`, `quality_level`, `risk_level` and
+`promoted_at`), and bronze must have a `source_category` column. The commands
+now exit with status 1 on failure instead of always 0.
+
 ## Development
 
 ```bash
@@ -66,7 +94,7 @@ Bronze (Raw) → Silver (Validated) → Gold (Enriched)
 pytest tests/ -v
 
 # Lint
-ruff check src/
+ruff check src/ tests/
 ```
 
 ## License

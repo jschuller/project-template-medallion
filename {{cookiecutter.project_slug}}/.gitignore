@@ -1,0 +1,28 @@
+# DuckDB databases are build outputs: rebuild them with the load and
+# transform commands instead of committing them.
+*.duckdb
+*.duckdb.wal
+
+# Local data: keep the folder, not its contents.
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tools
+.venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local environment
+.env
+
+# OS
+.DS_Store

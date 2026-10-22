@@ -1,0 +1,164 @@
+"""Tests for the classification CASE SQL generator."""
+
+from __future__ import annotations
+
+import duckdb
+import pytest
+
+from {{ cookiecutter.project_slug }}.storage.classification import (
+    CATEGORY_CASE_SQL,
+    DOMAIN_MAP,
+    QUALITY_CASE_SQL,
+    RISK_CASE_SQL,
+    SOURCE_CATEGORY_COLUMN,
+    ClassificationInfo,
+    SourceCategory,
+    generate_case_sql,
+    get_classification_info,
+    sql_identifier,
+    sql_string_literal,
+)
+
+
+def _info(category: str) -> ClassificationInfo:
+    return ClassificationInfo(
+        category=category, quality_level="q", risk_level="r", description="d"
+    )
+
+
+def _evaluate(
+    case_sql: str,
+    column: str,
+    inputs: list[SourceCategory],
+    column_type: str = "VARCHAR",
+) -> list[str]:
+    """Evaluate a CASE expression in DuckDB against one row per input."""
+    conn = duckdb.connect()
+    try:
+        conn.execute(f"CREATE TABLE t ({sql_identifier(column)} {column_type}, n INTEGER)")
+        conn.executemany("INSERT INTO t VALUES (?, ?)", [(v, i) for i, v in enumerate(inputs)])
+        rows = conn.execute(f"SELECT {case_sql} FROM t ORDER BY n").fetchall()
+        assert conn.execute("SELECT COUNT(*) FROM t").fetchone() == (len(inputs),)
+    finally:
+        conn.close()
+    return [row[0] for row in rows]
+
+
+def test_single_quotes_in_keys_values_and_default_are_escaped() -> None:
+    mapping = {"o'neil": _info("it's"), "plain": _info("PLAIN")}
+    sql = generate_case_sql(mapping, "source_category", "category", "n'a")
+
+    assert _evaluate(sql, "source_category", ["O'Neil", "plain", "other"]) == [
+        "it's",
+        "PLAIN",
+        "n'a",
+    ]
+
+
+def test_injection_attempt_is_returned_as_data() -> None:
+    payload = "x' end; drop table t; --"
+    sql = generate_case_sql({payload: _info(payload)}, "source_category", "category", "-")
+
+    # _evaluate also checks that table t still holds every row afterwards.
+    assert _evaluate(sql, "source_category", [payload]) == [payload]
+
+
+def test_backslashes_are_literal() -> None:
+    sql = generate_case_sql({"a\\b": _info("c\\d")}, "source_category", "category", "-")
+
+    assert _evaluate(sql, "source_category", ["a\\b"]) == ["c\\d"]
+
+
+def test_column_name_is_quoted() -> None:
+    column = 'odd "col"'
+    sql = generate_case_sql({"k": _info("V")}, column, "category", "-")
+
+    assert _evaluate(sql, column, ["k", "z"]) == ["V", "-"]
+
+
+def test_empty_mapping_returns_the_default() -> None:
+    sql = generate_case_sql({}, "source_category", "category", "UNKNOWN")
+
+    assert _evaluate(sql, "source_category", ["anything"]) == ["UNKNOWN"]
+
+
+def test_unknown_output_field_is_rejected() -> None:
+    with pytest.raises(ValueError, match="unknown ClassificationInfo field"):
+        generate_case_sql({"k": _info("V")}, "source_category", "__class__", "-")
+
+
+def test_literal_helpers_reject_nul() -> None:
+    assert sql_string_literal("it's") == "'it''s'"
+    with pytest.raises(ValueError):
+        sql_string_literal("a\x00b")
+    with pytest.raises(ValueError):
+        sql_identifier("")
+
+
+PARITY_INPUTS: list[SourceCategory] = [
+    *DOMAIN_MAP,
+    *(key.upper() for key in DOMAIN_MAP),
+    *(key.title() for key in DOMAIN_MAP),
+    "type_a ",  # surrounding spaces are significant in both
+    " type_a",
+    "unknown",
+    "",
+    None,
+    "o'brien",
+]
+
+
+@pytest.mark.parametrize(
+    ("field", "case_sql"),
+    [
+        ("category", CATEGORY_CASE_SQL),
+        ("quality_level", QUALITY_CASE_SQL),
+        ("risk_level", RISK_CASE_SQL),
+    ],
+)
+def test_sql_and_python_classification_agree(field: str, case_sql: str) -> None:
+    expected = [getattr(get_classification_info(v), field) for v in PARITY_INPUTS]
+
+    assert _evaluate(case_sql, SOURCE_CATEGORY_COLUMN, PARITY_INPUTS) == expected
+
+
+def test_matching_is_case_insensitive() -> None:
+    assert get_classification_info("TYPE_A") == DOMAIN_MAP["type_a"]
+    assert _evaluate(CATEGORY_CASE_SQL, SOURCE_CATEGORY_COLUMN, ["TYPE_A"]) == [
+        DOMAIN_MAP["type_a"].category
+    ]
+
+
+def test_domain_map_keys_are_lower_case() -> None:
+    # Both lookups lower-case the input, so a mixed-case key never matches.
+    assert all(key == key.lower() for key in DOMAIN_MAP)
+
+
+@pytest.mark.parametrize(
+    ("column_type", "inputs"),
+    [
+        ("BIGINT", [1, 2, 3, None]),
+        ("DOUBLE", [1.5, 2.0, None]),
+        ("BOOLEAN", [True, False, None]),
+    ],
+)
+def test_numeric_codes_classify_like_python(
+    column_type: str, inputs: list[SourceCategory]
+) -> None:
+    # CSV type detection reads codes like 1, 2 as numbers; both sides compare
+    # their text form ("1", "2.0", "true").
+    mapping = {"1": _info("ONE"), "2.0": _info("TWO"), "true": _info("YES")}
+    sql = generate_case_sql(mapping, SOURCE_CATEGORY_COLUMN, "category", "NONE")
+
+    def python_lookup(value: SourceCategory) -> str:
+        if value is None:
+            return "NONE"
+        return mapping.get(str(value).lower(), _info("NONE")).category
+
+    assert _evaluate(sql, SOURCE_CATEGORY_COLUMN, inputs, column_type) == [
+        python_lookup(v) for v in inputs
+    ]
+
+
+def test_get_classification_info_accepts_integer_codes() -> None:
+    assert get_classification_info(1) == get_classification_info("1")
