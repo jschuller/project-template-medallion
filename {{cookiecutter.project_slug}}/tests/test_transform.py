@@ -125,3 +125,45 @@ def test_schema_creation_failure_aborts_the_pipeline(tmp_path: Path) -> None:
         pytest.raises(duckdb.Error),
     ):
         transformer.run_full_pipeline()
+
+
+def test_integer_categories_classify(tmp_path: Path) -> None:
+    with MedallionTransformer(tmp_path / "codes.duckdb") as transformer:
+        transformer.create_schemas()
+        transformer.conn.execute(
+            f"CREATE TABLE {BRONZE} AS SELECT * FROM (VALUES (1, 1), (2, 2)) t(id, source_category)"
+        )
+        results = transformer.run_full_pipeline()
+        rows = transformer.conn.execute(
+            f"SELECT source_category, category FROM {GOLD} ORDER BY id"
+        ).fetchall()
+
+    assert [r.success for r in results] == [True, True]
+    assert [category for _, category in rows] == [
+        get_classification_info(code).category for code, _ in rows
+    ]
+
+
+@pytest.mark.parametrize("column", ["category", "Quality_Level", "risk_level", "promoted_at"])
+def test_gold_fails_when_bronze_has_an_output_column(tmp_path: Path, column: str) -> None:
+    with MedallionTransformer(tmp_path / "clash.duckdb") as transformer:
+        transformer.create_schemas()
+        transformer.conn.execute(
+            f"CREATE TABLE {BRONZE} AS SELECT 1 AS id, 'type_a' AS source_category, "
+            f"'mine' AS {column}"
+        )
+        results = transformer.run_full_pipeline()
+
+    assert [r.success for r in results] == [True, False]
+    assert results[1].error and column.lower() in results[1].error
+    assert "rename" in results[1].error
+
+
+def test_gold_fails_without_source_category(tmp_path: Path) -> None:
+    with MedallionTransformer(tmp_path / "nocat.duckdb") as transformer:
+        transformer.create_schemas()
+        transformer.conn.execute(f"CREATE TABLE {BRONZE} AS SELECT 1 AS id")
+        results = transformer.run_full_pipeline()
+
+    assert [r.success for r in results] == [True, False]
+    assert results[1].error and "source_category" in results[1].error

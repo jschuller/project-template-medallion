@@ -28,8 +28,11 @@ silver → gold. Gold adds `category`, `quality_level` and `risk_level` from
 `storage/classification.py`.
 
 To load your own data, pass any CSV with a header row. The shipped
-transforms need an `id` column and a `source_category` column. Both
-commands exit with status 1 on failure.
+transforms need an `id` column and a `source_category` column (text or
+numeric codes), and bronze must not have columns named `category`,
+`quality_level`, `risk_level` or `promoted_at`, which gold adds; gold fails
+with an error naming any such column. Both commands exit with status 1 on
+failure.
 
 ## Architecture
 

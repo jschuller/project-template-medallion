@@ -5,13 +5,19 @@ This ensures a single source of truth for classification logic: the gold
 layer (apps/transform.py) uses the generated CASE SQL, and
 get_classification_info gives the same answer in Python.
 
-Matching is case-insensitive in both: the input is lower-cased and looked up
-against the keys, so keep DOMAIN_MAP keys lower-case.
+Matching is case-insensitive in both: the input is converted to text,
+lower-cased and looked up against the keys, so keep DOMAIN_MAP keys lower-case.
+Numeric codes work too (the CSV loader reads a column of 1, 2, 3 as integers):
+key them by their text form, e.g. "1".
 """
 
 from __future__ import annotations
 
 from typing import NamedTuple
+
+# A source category as it comes from DuckDB: text, or a code that CSV type
+# detection read as a number or boolean.
+SourceCategory = str | int | float | None  # bool is an int
 
 
 class ClassificationInfo(NamedTuple):
@@ -61,12 +67,12 @@ DEFAULT_INFO = ClassificationInfo(
 )
 
 
-def get_classification_info(source_category: str | None) -> ClassificationInfo:
+def get_classification_info(source_category: SourceCategory) -> ClassificationInfo:
     """Get classification info for a source category.
 
-    Matches like the generated CASE SQL: case-insensitively, with no other
-    normalisation (surrounding spaces are significant), and NULL/None gets
-    the default.
+    Matches like the generated CASE SQL: the value's text form, lower-cased,
+    with no other normalisation (surrounding spaces are significant), and
+    NULL/None gets the default.
 
     Args:
         source_category: Source category identifier.
@@ -76,7 +82,7 @@ def get_classification_info(source_category: str | None) -> ClassificationInfo:
     """
     if source_category is None:
         return DEFAULT_INFO
-    return DOMAIN_MAP.get(source_category.lower(), DEFAULT_INFO)
+    return DOMAIN_MAP.get(str(source_category).lower(), DEFAULT_INFO)
 
 
 # =============================================================================
@@ -131,8 +137,9 @@ def generate_case_sql(
 
     Keys, values and the default are emitted as escaped string literals and
     the input column as a quoted identifier, so mapping data cannot change
-    the structure of the SQL. The column is lower-cased before matching, as
-    in get_classification_info, so keys should be lower-case.
+    the structure of the SQL. The column is cast to VARCHAR and lower-cased
+    before matching, as in get_classification_info, so it may be text or a
+    numeric code, and keys should be lower-case.
 
     Args:
         mapping: Classification mapping dictionary.
@@ -162,7 +169,7 @@ def generate_case_sql(
             f"    WHEN {sql_string_literal(key)} THEN {sql_string_literal(value)}"
         )
 
-    return f"""CASE lower({column})
+    return f"""CASE lower(CAST({column} AS VARCHAR))
 {chr(10).join(cases)}
     ELSE {default}
 END"""

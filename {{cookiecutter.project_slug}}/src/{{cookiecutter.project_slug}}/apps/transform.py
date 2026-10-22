@@ -16,7 +16,12 @@ from {{ cookiecutter.project_slug }}.storage.classification import (
     CATEGORY_CASE_SQL,
     QUALITY_CASE_SQL,
     RISK_CASE_SQL,
+    SOURCE_CATEGORY_COLUMN,
 )
+
+# Columns silver_to_gold adds to every silver column. Silver must not already
+# have them: DuckDB would keep both and rename ours (category_1, ...).
+GOLD_ADDED_COLUMNS = ("category", "quality_level", "risk_level", "promoted_at")
 
 if TYPE_CHECKING:
 {%- if cookiecutter.python_version.split(".")[1] | int >= 11 %}
@@ -196,8 +201,12 @@ class MedallionTransformer:
         """Transform Silver → Gold with enrichment.
 
         Rebuilds the gold table from silver on every run (idempotent), adding
-        category, quality_level and risk_level from the CASE SQL generated
-        from storage/classification.py. Silver needs a source_category column.
+        the GOLD_ADDED_COLUMNS: category, quality_level and risk_level from the
+        CASE SQL generated from storage/classification.py, and promoted_at.
+        Silver needs a source_category column and must not already have a
+        column with one of those names; the layer fails with an error naming
+        it rather than renaming either. Rename the bronze column, or change
+        the output names here and in GOLD_ADDED_COLUMNS.
         Override this method with your domain-specific enrichment logic.
 
         Returns:
@@ -205,6 +214,18 @@ class MedallionTransformer:
         """
         start = time.time()
         try:
+            schema_error = self._gold_schema_error()
+            if schema_error:
+                return TransformResult(
+                    layer="silver_to_gold",
+                    table="gold.{{ cookiecutter.gold_table }}",
+                    rows_created=0,
+                    rows_source=0,
+                    duration_seconds=time.time() - start,
+                    success=False,
+                    error=schema_error,
+                )
+
             # Example: enrich with classification from the Python mapping
             # Customize this SQL for your domain
             row = self.conn.execute(f"""
@@ -240,6 +261,33 @@ class MedallionTransformer:
                 error=str(e),
             )
 
+    def _gold_schema_error(self) -> str | None:
+        """Check that silver has what silver_to_gold reads and none it adds.
+
+        Returns:
+            An error message, or None if the silver columns fit.
+        """
+        rows = self.conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'silver' AND table_name = ?",
+            ["{{ cookiecutter.silver_table }}"],
+        ).fetchall()
+        columns = {name.lower() for (name,) in rows}
+        if not columns:
+            return "silver.{{ cookiecutter.silver_table }} does not exist"
+        if SOURCE_CATEGORY_COLUMN not in columns:
+            return (
+                "silver.{{ cookiecutter.silver_table }} has no "
+                f"{SOURCE_CATEGORY_COLUMN} column to classify"
+            )
+        clashes = [name for name in GOLD_ADDED_COLUMNS if name in columns]
+        if clashes:
+            return (
+                "silver.{{ cookiecutter.silver_table }} already has column(s) "
+                f"{', '.join(clashes)}, which gold adds; rename them in bronze"
+            )
+        return None
+
     def run_full_pipeline(self) -> list[TransformResult]:
         """Run complete Bronze → Silver → Gold pipeline.
 
@@ -264,4 +312,3 @@ class MedallionTransformer:
             results.append(self.silver_to_gold())
 
         return results
-

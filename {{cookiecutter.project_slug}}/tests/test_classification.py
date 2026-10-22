@@ -12,6 +12,7 @@ from {{ cookiecutter.project_slug }}.storage.classification import (
     RISK_CASE_SQL,
     SOURCE_CATEGORY_COLUMN,
     ClassificationInfo,
+    SourceCategory,
     generate_case_sql,
     get_classification_info,
     sql_identifier,
@@ -25,11 +26,16 @@ def _info(category: str) -> ClassificationInfo:
     )
 
 
-def _evaluate(case_sql: str, column: str, inputs: list[str | None]) -> list[str]:
+def _evaluate(
+    case_sql: str,
+    column: str,
+    inputs: list[SourceCategory],
+    column_type: str = "VARCHAR",
+) -> list[str]:
     """Evaluate a CASE expression in DuckDB against one row per input."""
     conn = duckdb.connect()
     try:
-        conn.execute(f"CREATE TABLE t ({sql_identifier(column)} VARCHAR, n INTEGER)")
+        conn.execute(f"CREATE TABLE t ({sql_identifier(column)} {column_type}, n INTEGER)")
         conn.executemany("INSERT INTO t VALUES (?, ?)", [(v, i) for i, v in enumerate(inputs)])
         rows = conn.execute(f"SELECT {case_sql} FROM t ORDER BY n").fetchall()
         assert conn.execute("SELECT COUNT(*) FROM t").fetchone() == (len(inputs),)
@@ -89,7 +95,7 @@ def test_literal_helpers_reject_nul() -> None:
         sql_identifier("")
 
 
-PARITY_INPUTS: list[str | None] = [
+PARITY_INPUTS: list[SourceCategory] = [
     *DOMAIN_MAP,
     *(key.upper() for key in DOMAIN_MAP),
     *(key.title() for key in DOMAIN_MAP),
@@ -126,3 +132,33 @@ def test_matching_is_case_insensitive() -> None:
 def test_domain_map_keys_are_lower_case() -> None:
     # Both lookups lower-case the input, so a mixed-case key never matches.
     assert all(key == key.lower() for key in DOMAIN_MAP)
+
+
+@pytest.mark.parametrize(
+    ("column_type", "inputs"),
+    [
+        ("BIGINT", [1, 2, 3, None]),
+        ("DOUBLE", [1.5, 2.0, None]),
+        ("BOOLEAN", [True, False, None]),
+    ],
+)
+def test_numeric_codes_classify_like_python(
+    column_type: str, inputs: list[SourceCategory]
+) -> None:
+    # CSV type detection reads codes like 1, 2 as numbers; both sides compare
+    # their text form ("1", "2.0", "true").
+    mapping = {"1": _info("ONE"), "2.0": _info("TWO"), "true": _info("YES")}
+    sql = generate_case_sql(mapping, SOURCE_CATEGORY_COLUMN, "category", "NONE")
+
+    def python_lookup(value: SourceCategory) -> str:
+        if value is None:
+            return "NONE"
+        return mapping.get(str(value).lower(), _info("NONE")).category
+
+    assert _evaluate(sql, SOURCE_CATEGORY_COLUMN, inputs, column_type) == [
+        python_lookup(v) for v in inputs
+    ]
+
+
+def test_get_classification_info_accepts_integer_codes() -> None:
+    assert get_classification_info(1) == get_classification_info("1")

@@ -39,9 +39,12 @@ Both commands exit with status 1 on failure.
 - Silver → Gold: Enrichment (classification, risk assessment)
 
 Bronze needs an `id` column (silver drops rows where it is NULL) and a
-`source_category` column. Gold adds `category`, `quality_level` and
-`risk_level` from the CASE SQL generated from `storage/classification.py`;
-the match is case-insensitive, like `get_classification_info()`.
+`source_category` column (text or numeric codes). Gold adds `category`,
+`quality_level` and `risk_level` from the CASE SQL generated from
+`storage/classification.py`, plus `promoted_at` (`GOLD_ADDED_COLUMNS`); the
+match is on the value's text, case-insensitively, like
+`get_classification_info()`. If bronze already has a column with one of those
+names, gold fails with an error naming it: rename the bronze column.
 
 ## Architecture
 
