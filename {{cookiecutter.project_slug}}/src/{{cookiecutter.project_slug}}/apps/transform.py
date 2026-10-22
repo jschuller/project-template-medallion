@@ -8,8 +8,18 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import duckdb
+
+if TYPE_CHECKING:
+{%- if cookiecutter.python_version.split(".")[1] | int >= 11 %}
+    from typing import Self
+{%- else %}
+    # Annotation-only import (see `from __future__ import annotations`), so
+    # Python 3.10 needs no runtime typing_extensions dependency.
+    from typing_extensions import Self
+{%- endif %}
 
 
 @dataclass
@@ -55,27 +65,21 @@ class MedallionTransformer:
         self.db_path = db_path
         self.conn = duckdb.connect(str(db_path), read_only=read_only)
 
-    def __enter__(self) -> "MedallionTransformer":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
         self.conn.close()
 
-    def create_schemas(self) -> dict[str, bool]:
+    def create_schemas(self) -> None:
         """Create medallion schemas if they don't exist.
 
-        Returns:
-            Dict mapping schema names to creation success.
+        Raises:
+            duckdb.Error: If a schema cannot be created (for example, the
+                database is read-only). The pipeline cannot run without them.
         """
-        results = {}
         for schema in ["bronze", "silver", "gold"]:
-            try:
-                self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
-                results[schema] = True
-            except Exception as e:
-                results[schema] = False
-                print(f"Error creating schema {schema}: {e}")
-        return results
+            self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
 
     def get_status(self) -> MedallionStatus:
         """Get current record counts for each layer.
@@ -93,22 +97,26 @@ class MedallionTransformer:
         )
 
     def _safe_count(self, schema: str, table: str) -> int:
-        """Safely count rows in a table.
+        """Count rows in a table, treating a missing table as empty.
 
         Args:
             schema: Schema name.
             table: Table name.
 
         Returns:
-            Row count or 0 if table doesn't exist.
+            Row count, or 0 if the schema or table doesn't exist.
+
+        Raises:
+            duckdb.Error: Any other database error (I/O, permissions, a
+                corrupt file). These are not reported as zero rows.
         """
         try:
             result = self.conn.execute(
                 f"SELECT COUNT(*) FROM {schema}.{table}"
             ).fetchone()
-            return result[0] if result else 0
-        except Exception:
+        except duckdb.CatalogException:
             return 0
+        return result[0] if result else 0
 
     def bronze_to_silver(self) -> TransformResult:
         """Transform Bronze → Silver with validation.
@@ -142,7 +150,7 @@ class MedallionTransformer:
                 duration_seconds=time.time() - start,
                 success=True,
             )
-        except Exception as e:
+        except duckdb.Error as e:
             return TransformResult(
                 layer="bronze_to_silver",
                 table="silver.{{ cookiecutter.silver_table }}",
@@ -186,7 +194,7 @@ class MedallionTransformer:
                 duration_seconds=time.time() - start,
                 success=True,
             )
-        except Exception as e:
+        except duckdb.Error as e:
             return TransformResult(
                 layer="silver_to_gold",
                 table="gold.{{ cookiecutter.gold_table }}",
@@ -201,11 +209,16 @@ class MedallionTransformer:
         """Run complete Bronze → Silver → Gold pipeline.
 
         Returns:
-            List of TransformResults for each layer.
+            List of TransformResults for each layer that ran. Silver → Gold
+            is skipped if Bronze → Silver failed, so the pipeline succeeded
+            only if every result has ``success=True``.
+
+        Raises:
+            duckdb.Error: If the medallion schemas cannot be created.
         """
         results = []
 
-        # Ensure schemas exist
+        # Ensure schemas exist (raises if they cannot be created)
         self.create_schemas()
 
         # Bronze → Silver
@@ -216,3 +229,4 @@ class MedallionTransformer:
             results.append(self.silver_to_gold())
 
         return results
+
