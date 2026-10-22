@@ -69,16 +69,10 @@ class MedallionTransformer:
             raise RuntimeError("Not connected. Use context manager.")
         return self._conn
 
-    def create_schemas(self) -> dict[str, bool]:
-        """Create bronze, silver, gold schemas."""
-        results = {}
+    def create_schemas(self) -> None:
+        """Create bronze, silver, gold schemas; raises duckdb.Error on failure."""
         for schema in ["bronze", "silver", "gold"]:
-            try:
-                self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
-                results[schema] = True
-            except Exception as e:
-                results[schema] = False
-        return results
+            self.conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
 
     def get_status(self) -> dict:
         """Get table counts per layer."""
@@ -112,18 +106,44 @@ DOMAIN_MAP: Dict[str, ClassInfo] = {
     "category_c": ClassInfo("PROTO_C", "CMDB_CLASS_C", 5, "LOW"),
 }
 
-def generate_case_sql(mapping: dict, input_col: str, output_field: str) -> str:
-    """Generate SQL CASE statement from mapping dictionary."""
-    cases = []
-    for key, info in mapping.items():
-        value = getattr(info, output_field)
-        if isinstance(value, str):
-            cases.append(f"WHEN '{key}' THEN '{value}'")
-        else:
-            cases.append(f"WHEN '{key}' THEN {value}")
+def sql_literal(value: str | int | None) -> str:
+    """Render a mapping value as a SQL literal (strings: single quotes doubled)."""
+    if value is None:
+        return "NULL"
+    if isinstance(value, bool):  # bool is an int subclass; reject it explicitly
+        raise TypeError("booleans are not supported")
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return "'" + value.replace("'", "''") + "'"
+    raise TypeError(f"unsupported literal type: {type(value).__name__}")
 
-    return f"CASE {input_col}\n    " + "\n    ".join(cases) + "\n    ELSE 'UNKNOWN'\nEND"
+def generate_case_sql(
+    mapping: dict, input_col: str, output_field: str, default: str | int | None
+) -> str:
+    """Generate SQL CASE statement from mapping dictionary.
+
+    Every THEN and the ELSE must have one SQL type, so pass a default of the
+    field's type (a string for protocol, an integer for purdue_level), or None
+    for NULL. Keys are matched case-insensitively against a lower-cased input.
+    """
+    column = '"' + input_col.replace('"', '""') + '"'  # quoted identifier
+    cases = [
+        f"WHEN {sql_literal(key)} THEN {sql_literal(getattr(info, output_field))}"
+        for key, info in mapping.items()
+    ]
+    return (
+        f"CASE lower({column})\n    " + "\n    ".join(cases)
+        + f"\n    ELSE {sql_literal(default)}\nEND"
+    )
+
+PROTOCOL_CASE_SQL = generate_case_sql(DOMAIN_MAP, "category", "protocol", "UNKNOWN")
+PURDUE_CASE_SQL = generate_case_sql(DOMAIN_MAP, "category", "purdue_level", None)
 ```
+
+The generated project's `storage/classification.py` follows the same rules
+for its string-only fields, and its tests check that the SQL and Python
+lookups agree.
 
 ### 4. Layer Transformation Template
 
@@ -140,19 +160,24 @@ def bronze_to_silver(
     start_time = datetime.now()
 
     exclude_categories = exclude_categories or ["unknown"]
-    exclude_list = ", ".join(f"'{c}'" for c in exclude_categories)
+    placeholders = ", ".join("?" for _ in exclude_categories)
+    params = [min_threshold, min_count, *exclude_categories]
 
+    # Caller values are bound as parameters (?), never formatted into the SQL.
+    # Only fixed names and generated, escaped SQL (PROTOCOL_CASE_SQL) are.
     sql = f"""
         SELECT *,
             {PROTOCOL_CASE_SQL} AS inferred_protocol
         FROM bronze.raw_data
-        WHERE metric_value >= {min_threshold}
-          AND detection_count >= {min_count}
-          AND category NOT IN ({exclude_list})
+        WHERE metric_value >= ?
+          AND detection_count >= ?
+          AND category NOT IN ({placeholders})
     """
 
     try:
-        source_count = self.conn.execute(f"SELECT COUNT(*) FROM ({sql}) sub").fetchone()[0]
+        source_count = self.conn.execute(
+            f"SELECT COUNT(*) FROM ({sql}) sub", params
+        ).fetchone()[0]
 
         if dry_run:
             return TransformResult(
@@ -164,7 +189,7 @@ def bronze_to_silver(
 
         self.create_schemas()
         self.conn.execute("DROP TABLE IF EXISTS silver.verified_data")
-        self.conn.execute(f"CREATE TABLE silver.verified_data AS {sql}")
+        self.conn.execute(f"CREATE TABLE silver.verified_data AS {sql}", params)
 
         result_count = self.conn.execute("SELECT COUNT(*) FROM silver.verified_data").fetchone()[0]
 
@@ -174,7 +199,7 @@ def bronze_to_silver(
             duration_seconds=(datetime.now() - start_time).total_seconds(),
             success=True
         )
-    except Exception as e:
+    except duckdb.Error as e:  # report database errors; let bugs raise
         return TransformResult(
             layer="silver", table="verified_data",
             rows_created=0, rows_source=0,
