@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import duckdb
@@ -82,3 +83,43 @@ def test_load_exits_1_for_unreadable_csv(project_dir: Path) -> None:
     bad.write_bytes(b"id,name\n1,\xff\xfe\n")  # not valid UTF-8
 
     assert cli.load([str(bad)]) == 1
+
+
+def _bronze_count() -> int:
+    with MedallionTransformer(cli.DB_PATH, read_only=True) as transformer:
+        return transformer.get_status().bronze_count
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="* is not allowed in Windows file names")
+def test_load_refuses_glob_paths(
+    project_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # DuckDB would read "a*.csv" as a glob and load a1.csv as well.
+    (project_dir / "a*.csv").write_text("id,source_category\n1,type_a\n")
+    (project_dir / "a1.csv").write_text("id,source_category\n2,type_b\n")
+
+    assert cli.load([str(project_dir / "a*.csv")]) == 1
+    assert "glob" in capsys.readouterr().err
+    assert not cli.DB_PATH.exists() or _bronze_count() == 0
+
+
+def test_load_refuses_empty_csv(
+    project_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    empty = project_dir / "empty.csv"
+    empty.write_bytes(b"")
+
+    assert cli.load([str(empty)]) == 1
+    assert "id, source_category" in capsys.readouterr().err
+
+
+def test_load_refuses_missing_column_and_keeps_bronze(
+    project_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.load([str(SAMPLE_CSV)]) == 0
+    no_category = project_dir / "no_category.csv"
+    no_category.write_text("id,name\n1,a\n")
+
+    assert cli.load([str(no_category)]) == 1
+    assert "no source_category column" in capsys.readouterr().err
+    assert _bronze_count() == 7

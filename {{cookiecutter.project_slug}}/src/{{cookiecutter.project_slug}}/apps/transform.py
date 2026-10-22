@@ -23,6 +23,13 @@ from {{ cookiecutter.project_slug }}.storage.classification import (
 # have them: DuckDB would keep both and rename ours (category_1, ...).
 GOLD_ADDED_COLUMNS = ("category", "quality_level", "risk_level", "promoted_at")
 
+# Columns the shipped transforms read from bronze; load_bronze_csv requires them.
+REQUIRED_BRONZE_COLUMNS = ("id", SOURCE_CATEGORY_COLUMN)
+
+# DuckDB's read_csv expands these as a glob, so a path containing them could
+# load other files too; load_bronze_csv refuses such paths.
+GLOB_CHARACTERS = "*?[]"
+
 if TYPE_CHECKING:
 {%- if cookiecutter.python_version.split(".")[1] | int >= 11 %}
     from typing import Self
@@ -97,6 +104,8 @@ class MedallionTransformer:
 
         Column names come from the header row and types are detected by
         DuckDB. The path is passed as a query parameter, not spliced into SQL.
+        The file must have the REQUIRED_BRONZE_COLUMNS; otherwise bronze is
+        left unchanged.
 
         Args:
             csv_path: CSV file with a header row.
@@ -105,15 +114,35 @@ class MedallionTransformer:
             Number of rows loaded.
 
         Raises:
+            ValueError: If the path contains glob characters (``*?[]``) or the
+                file lacks a required column.
             duckdb.Error: If the file cannot be read or parsed.
         """
+        path = str(csv_path)
+        if any(char in path for char in GLOB_CHARACTERS):
+            raise ValueError(
+                f"refusing a CSV path containing any of {GLOB_CHARACTERS!r}, which "
+                f"DuckDB would expand as a glob: {path}; rename the file"
+            )
+
+        described = self.conn.execute(
+            "DESCRIBE SELECT * FROM read_csv(?, header = true)", [path]
+        ).fetchall()
+        found = {row[0].lower() for row in described}
+        missing = [name for name in REQUIRED_BRONZE_COLUMNS if name not in found]
+        if missing:
+            raise ValueError(
+                f"{path} has no {', '.join(missing)} column(s); the header row "
+                f"must include {', '.join(REQUIRED_BRONZE_COLUMNS)}"
+            )
+
         self.create_schemas()
         row = self.conn.execute(
             """
             CREATE OR REPLACE TABLE bronze.{{ cookiecutter.bronze_table }} AS
             SELECT * FROM read_csv(?, header = true)
             """,
-            [str(csv_path)],
+            [path],
         ).fetchone()
         return row[0] if row else 0
 

@@ -38,7 +38,8 @@ def load(argv: list[str] | None = None) -> int:
         description=(
             "Load a CSV file (with a header row) into "
             "bronze.{{ cookiecutter.bronze_table }}, replacing its contents. "
-            "The pipeline needs id and source_category columns."
+            "The header must include id and source_category, and the path "
+            "must not contain glob characters (*?[])."
         ),
     )
     parser.add_argument("csv", type=Path, help=f"CSV file to load, e.g. {SAMPLE_CSV}")
@@ -52,7 +53,7 @@ def load(argv: list[str] | None = None) -> int:
     try:
         with MedallionTransformer(DB_PATH) as transformer:
             rows = transformer.load_bronze_csv(args.csv)
-    except duckdb.Error as e:
+    except (duckdb.Error, ValueError) as e:
         print(f"Load failed: {e}", file=sys.stderr)
         return 1
 
