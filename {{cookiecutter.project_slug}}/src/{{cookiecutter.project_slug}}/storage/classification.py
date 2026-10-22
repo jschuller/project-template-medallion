@@ -71,6 +71,44 @@ def get_classification_info(source_category: str | None) -> ClassificationInfo:
 # SQL CASE Statement Generation
 # =============================================================================
 
+def sql_string_literal(value: str) -> str:
+    """Quote a value as a SQL string literal.
+
+    Single quotes are doubled, the SQL standard escape that DuckDB uses;
+    backslashes have no special meaning in DuckDB string literals.
+
+    Args:
+        value: Text to quote.
+
+    Returns:
+        The quoted literal, e.g. ``it's`` becomes ``'it''s'``.
+
+    Raises:
+        ValueError: If the value contains a NUL character.
+    """
+    if "\x00" in value:
+        raise ValueError("SQL string literals cannot contain NUL characters")
+    return "'" + value.replace("'", "''") + "'"
+
+
+def sql_identifier(name: str) -> str:
+    """Quote a column name as a SQL identifier, doubling double quotes.
+
+    Args:
+        name: A single column name (not an expression or a dotted path).
+
+    Returns:
+        The quoted identifier, e.g. ``source_category`` becomes
+        ``"source_category"``.
+
+    Raises:
+        ValueError: If the name is empty or contains a NUL character.
+    """
+    if not name or "\x00" in name:
+        raise ValueError(f"invalid SQL identifier: {name!r}")
+    return '"' + name.replace('"', '""') + '"'
+
+
 def generate_case_sql(
     mapping: dict[str, ClassificationInfo],
     input_col: str,
@@ -79,6 +117,10 @@ def generate_case_sql(
 ) -> str:
     """Generate SQL CASE statement from Python mapping.
 
+    Keys, values and the default are emitted as escaped string literals and
+    the input column as a quoted identifier, so mapping data cannot change
+    the structure of the SQL.
+
     Args:
         mapping: Classification mapping dictionary.
         input_col: Input column name.
@@ -86,16 +128,30 @@ def generate_case_sql(
         default_value: Default value for unmatched cases.
 
     Returns:
-        SQL CASE statement string.
+        SQL CASE expression string (just the default literal if the mapping
+        is empty, since CASE needs at least one WHEN).
+
+    Raises:
+        ValueError: If output_field is not a ClassificationInfo field.
     """
+    if output_field not in ClassificationInfo._fields:
+        raise ValueError(f"unknown ClassificationInfo field: {output_field!r}")
+
+    column = sql_identifier(input_col)
+    default = sql_string_literal(default_value)
+    if not mapping:
+        return default
+
     cases = []
     for key, info in mapping.items():
         value = getattr(info, output_field)
-        cases.append(f"    WHEN '{key}' THEN '{value}'")
+        cases.append(
+            f"    WHEN {sql_string_literal(key)} THEN {sql_string_literal(value)}"
+        )
 
-    return f"""CASE {input_col}
+    return f"""CASE {column}
 {chr(10).join(cases)}
-    ELSE '{default_value}'
+    ELSE {default}
 END"""
 
 
