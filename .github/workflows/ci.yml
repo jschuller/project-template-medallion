@@ -41,7 +41,7 @@ jobs:
           UV_PYTHON: "3.10"
         run: |
           uv run --extra dev pytest -q
-          uv run --extra dev ruff check src/
+          uv run --extra dev ruff check src/ tests/
 
       # The generated README's quickstart, as written.
       - name: Quickstart defaults project
@@ -72,7 +72,7 @@ jobs:
           UV_PYTHON: "3.12"
         run: |
           uv run --extra dev pytest -q
-          uv run --extra dev ruff check src/
+          uv run --extra dev ruff check src/ tests/
 
       - name: Quickstart custom project
         working-directory: ${{ runner.temp }}/custom/acme_sensor_lake

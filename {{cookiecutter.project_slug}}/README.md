@@ -94,7 +94,7 @@ now exit with status 1 on failure instead of always 0.
 pytest tests/ -v
 
 # Lint
-ruff check src/
+ruff check src/ tests/
 ```
 
 ## License
